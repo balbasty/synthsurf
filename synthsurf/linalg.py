@@ -193,3 +193,40 @@ def relabel(x, lookup=None):
     for i, j in enumerate(lookup):
         out[isin(x, j)] = i
     return out
+
+
+def spsolve(A, b):
+    """Sparse solve
+
+    !!! warning
+        A must be a single matrix, batching not supported.
+
+    Parameters
+    ----------
+    A : (N, N) sparse tensor
+    b : (..., N) tensor
+
+    Returns
+    -------
+    x : (..., N) tensor
+    """
+    if b.is_cuda:
+        from cupy.sparse.linalg import spsolve
+        from cupy.sparse import coo_matrix, csr_matrix
+        from jitfields.bindings.cuda.utils import to_cupy, from_cupy
+        topy = to_cupy
+        frompy = from_cupy
+    else:
+        from scipy.sparse.linalg import spsolve 
+        from scipy.sparse import coo_matrix, csr_matrix
+        topy = lambda x: x.numpy()
+        frompy = torch.as_tensor
+
+    A = A.coalesce()
+    ind = topy(A.indices())
+    val = topy(A.values())
+    A = csr_matrix(coo_matrix((val, (ind[0], ind[1])), A.shape))
+    b = topy(b)
+    x = spsolve(A, b)
+    return frompy(x)
+

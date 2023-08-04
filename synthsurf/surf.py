@@ -1,4 +1,5 @@
 import torch
+import math
 from .linalg import dot, outer, lmdiv, matvec
 
 # WARNING: most of these functions assume a closed surface
@@ -181,7 +182,7 @@ def face_area(coord, faces):
 
     Returns
     -------
-    area : (M,) tensor
+    area : (M, [D]) tensor
         Area of each face
 
     """
@@ -194,8 +195,7 @@ def face_area(coord, faces):
         a = vert[..., k] - vert[..., 0]
         b = vert[..., k + 1] - vert[..., 0]
         area += torch.cross(a, b)
-    area = dot(area, area).sqrt_().div_(2)
-    return area
+    return dot(area, area).sqrt_().div_(2)
 
 
 def vertex_normal(coord, faces):
@@ -671,3 +671,286 @@ def adjacency(n, faces, dtype=None):
     adj = adj.coalesce()
     dtype = dtype or torch.bool
     return adj.to(dtype)
+
+
+def stiffness(vertices, faces):
+    """Compute the (sparse) stiffness matrix 
+
+    This function is only implemented for 3D meshes.
+
+    Parameters
+    ----------
+    vertices : (N, 3) tensor
+        Mesh vertices
+    faces : (N, K) tensor
+        Mesh faces
+
+    Returns
+    -------
+    stiff : (N, N) sparse tensor
+        Stiffness matrix
+
+    References
+    ----------
+    1. "Discrete Laplace-Beltrami Operators for Shape Analysis and Segmentation"
+       Reuter M, Biasotti S, Giorgi D, Patane G, Spagnuolo M
+       Computers & Graphics (2009)
+    """
+    n = len(vertices)
+
+    # NOTE
+    #   . <u,v> = "angle formed by the vectors u and v"
+    #   . cot(<u,v>) = dot(u, v) / |cross(u, v)|
+    #   . |cross(u, v)| = 2 * area of the corresponding triangle
+    #
+    #   Let the triangle be             A
+    #                                 /   \
+    #                                B --- C
+    #   For the weight assigned to edge B-C, I compute cot(<AB, AC>).
+    #   Note that Martin Martin computes cot(<CA, AB>), but this 
+    #   is equal to -cot(<AB, CA>) = cot(<AB, AC>). So everyting's fine.
+
+    # compute triangles area (x 4)
+    area4 = face_area(vertices, faces) * 4
+    area4.clamp_min_(area4.mean() * 1e-4)
+
+    triangles = vertex_sample(vertices, faces)
+
+    # angle at vertex 0
+    alpha0 = -dot(triangles[:,1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]) / area4
+    a = torch.sparse_coo_tensor(faces[:, 1:].T, alpha0, [n, n])
+
+    # angle at vertex 1
+    alpha1 = -dot(triangles[:, 2] - triangles[:, 1], triangles[:, 0] - triangles[:, 1]) / area4
+    a += torch.sparse_coo_tensor(faces[:, [0, 2]].T, alpha1, [n, n])
+
+    # angle at vertex 2
+    alpha2 = -dot(triangles[:, 0] - triangles[:, 2], triangles[:, 1] - triangles[:, 2]) / area4
+    a += torch.sparse_coo_tensor(faces[:, :2].T, alpha2, [n, n])
+    
+    # make symmetric
+    a += a.transpose(-1, -2)
+
+    # diagonal
+    a += torch.sparse_coo_tensor(faces[:, [0, 0]].T, -(alpha1+alpha2), [n, n])
+    a += torch.sparse_coo_tensor(faces[:, [1, 1]].T, -(alpha0+alpha2), [n, n])
+    a += torch.sparse_coo_tensor(faces[:, [2, 2]].T, -(alpha0+alpha1), [n, n])
+
+    a = a.coalesce()
+    return a
+
+
+def face_cotangents(vertices, faces):
+    """Compute cotangents in each face
+
+    This function is only implemented for 3D meshes.
+
+    Parameters
+    ----------
+    vertices : (N, 3) tensor
+        Mesh vertices
+    faces : (N, K) tensor
+        Mesh faces
+
+    Returns
+    -------
+    cot : (M, D) tensor
+        Cotangents in each face
+
+    References
+    ----------
+    1. "Discrete Laplace-Beltrami Operators for Shape Analysis and Segmentation"
+       Reuter M, Biasotti S, Giorgi D, Patane G, Spagnuolo M
+       Computers & Graphics (2009)
+    """
+    n = len(vertices)
+
+    # compute triangles area (x 4)
+    area4 = face_area(vertices, faces) * 4
+    area4.clamp_min_(area4.mean() * 1e-4)
+
+    triangles = vertex_sample(vertices, faces)
+
+    # angle at vertex 0
+    alpha0 = -dot(triangles[:,1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]) / area4
+
+    # angle at vertex 1
+    alpha1 = -dot(triangles[:, 2] - triangles[:, 1], triangles[:, 0] - triangles[:, 1]) / area4
+
+    # angle at vertex 2
+    alpha2 = -dot(triangles[:, 0] - triangles[:, 2], triangles[:, 1] - triangles[:, 2]) / area4
+    
+    return torch.stack([alpha0, alpha1, alpha2], dim=-1)
+
+
+def stiffness_matvec(cot, faces, vector):
+    """Apply the matrix-vector product between the stiffness matrix and a vector
+
+    Parameters
+    ----------
+    cot : (M, D) tensor
+        Cotangents in each face
+    faces : (N, K) tensor
+        Mesh faces
+    vector : (N, 3) tensor
+        Vector of vertices
+
+    Returns
+    -------
+    matvec : (N, 3) tensor
+        Matrix-vector product
+
+    References
+    ----------
+    1. "Discrete Laplace-Beltrami Operators for Shape Analysis and Segmentation"
+       Reuter M, Biasotti S, Giorgi D, Patane G, Spagnuolo M
+       Computers & Graphics (2009)
+    """
+    triangles = vertex_sample(vector, faces)
+    matvec = torch.zeros_like(vector)
+    cot = cot.unsqueeze(-1)
+
+    # offdiagonal
+    vertex_scatter_add_(matvec, faces[:, 1], cot[:, 0] * triangles[:, 2])
+    vertex_scatter_add_(matvec, faces[:, 2], cot[:, 0] * triangles[:, 1])
+    vertex_scatter_add_(matvec, faces[:, 0], cot[:, 1] * triangles[:, 2])
+    vertex_scatter_add_(matvec, faces[:, 2], cot[:, 1] * triangles[:, 0])
+    vertex_scatter_add_(matvec, faces[:, 0], cot[:, 2] * triangles[:, 1])
+    vertex_scatter_add_(matvec, faces[:, 1], cot[:, 2] * triangles[:, 0])
+
+    # diagonal
+    vertex_scatter_add_(matvec, faces[:, 0], - (cot[:, 1] + cot[:, 2]) * triangles[:, 0])
+    vertex_scatter_add_(matvec, faces[:, 1], - (cot[:, 0] + cot[:, 2]) * triangles[:, 1])
+    vertex_scatter_add_(matvec, faces[:, 2], - (cot[:, 0] + cot[:, 1]) * triangles[:, 2])
+
+    return matvec
+
+
+def mass(vertices, faces, lump=False):
+    """Compute the (sparse) mass matrix 
+
+    This function is only implemented for 3D meshes.
+
+    Parameters
+    ----------
+    vertices : (N, 3) tensor
+        Mesh vertices
+    faces : (N, K) tensor
+        Mesh faces
+    lump : bool
+        Return the majoriser diag(|B|1) instead of B
+        (i.e., lump weights on the diagonal)
+
+    Returns
+    -------
+    mass : (N, N) sparse tensor
+        Mass matrix
+
+    References
+    ----------
+    1. "Discrete Laplace-Beltrami Operators for Shape Analysis and Segmentation"
+       Reuter M, Biasotti S, Giorgi D, Patane G, Spagnuolo M
+       Computers & Graphics (2009)
+    """
+    n = len(vertices)
+
+    area = face_area(vertices, faces)
+    area /= 3 if lump else 12
+
+    # diagonal
+    a  = torch.sparse_coo_tensor(faces[:, [0, 0]].T, area, [n, n])
+    a += torch.sparse_coo_tensor(faces[:, [1, 1]].T, area, [n, n])
+    a += torch.sparse_coo_tensor(faces[:, [2, 2]].T, area, [n, n])
+
+    if not lump:
+        a += torch.sparse_coo_tensor(faces[:, 1:].T, area, [n, n])
+        a += torch.sparse_coo_tensor(faces[:, [0, 2]].T, area, [n, n])
+        a += torch.sparse_coo_tensor(faces[:, :2].T, area, [n, n])
+        
+        # make symmetric
+        a += a.transpose(-1, -2)
+
+    a = a.coalesce()
+    return a
+
+
+def mass_matvec(area, faces, vector, lump=False):
+    """Apply the matrix-vector product between the stiffness matrix and a vector
+
+    Parameters
+    ----------
+    area : (M, D) tensor
+        Area of each face
+    faces : (N, K) tensor
+        Mesh faces
+    vector : (N, 3) tensor
+        Vector of vertices
+    lump : bool
+        Apply the majoriser diag(|B|1) instead of B
+        (i.e., lump weights on the diagonal)
+
+    Returns
+    -------
+    matvec : (N, 3) tensor
+        Matrix-vector product
+
+    References
+    ----------
+    1. "Discrete Laplace-Beltrami Operators for Shape Analysis and Segmentation"
+       Reuter M, Biasotti S, Giorgi D, Patane G, Spagnuolo M
+       Computers & Graphics (2009)
+    """
+    triangles = vertex_sample(vector, faces)
+    matvec = torch.zeros_like(vector)
+
+    area = area / (3 if lump else 6)
+    area = area.unsqueeze(-1)
+
+    # diagonal
+    vertex_scatter_add_(matvec, faces[:, 0], area * triangles[:, 0])
+    vertex_scatter_add_(matvec, faces[:, 1], area * triangles[:, 1])
+    vertex_scatter_add_(matvec, faces[:, 2], area * triangles[:, 2])
+
+    if not lump:
+        # offdiagonal
+        area /= 2
+        vertex_scatter_add_(matvec, faces[:, 0], area * triangles[:, 1])
+        vertex_scatter_add_(matvec, faces[:, 0], area * triangles[:, 2])
+        vertex_scatter_add_(matvec, faces[:, 1], area * triangles[:, 0])
+        vertex_scatter_add_(matvec, faces[:, 1], area * triangles[:, 2])
+        vertex_scatter_add_(matvec, faces[:, 2], area * triangles[:, 0])
+        vertex_scatter_add_(matvec, faces[:, 2], area * triangles[:, 1])
+
+    return matvec
+
+
+
+def mesh_area(vertices, faces):
+    """Compute the integral area of the mesh"""
+    return face_area(vertices, faces).sum()
+
+
+def mesh_centroid_area(vertices, faces):
+    """Compute the centroid and integral area of the mesh"""
+    area = face_area(vertices, faces).unsqueeze(-1)
+    centers = face_barycenter(vertices, faces)
+    sumarea = area.sum(0)
+    return (area * centers).sum(0) / sumarea, sumarea.squeeze(-1)
+
+
+def mesh_centroid(vertices, faces):
+    """Compute the centroid (center of mass) of the mesh"""
+    return mesh_centroid_area(vertices, faces)[0]
+
+
+def mesh_normalize_(vertices, faces):
+    """Normalize to area and location of the unit sphere (inplace)"""
+    center, area = mesh_centroid_area(vertices, faces)
+    vertices -= center
+    vertices /= area.div_(4*math.pi).sqrt_()
+    return vertices
+
+
+def mesh_normalize(vertices, faces):
+    """Normalize to area and location of the unit sphere"""
+    return mesh_normalize_(vertices.clone(), faces)

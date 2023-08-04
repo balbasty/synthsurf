@@ -23,6 +23,7 @@ def wireframe(vertices, faces, color='black', width=1, **prm):
     if not go:
         return None
     tri_points = vertex_sample(vertices, faces)
+    tri_points = tri_points.detach().cpu()
     Xe = []
     Ye = []
     Ze = []
@@ -96,7 +97,10 @@ def surf(vertices, faces, **prm):
     return mesh
 
 
-def show_surf(vertices, faces, **prm):
+_wireframe = wireframe
+
+
+def show_surf(vertices, faces, wireframe=False, **prm):
     """Plot the mesh as a surface in plotly
 
     Parameters
@@ -113,7 +117,13 @@ def show_surf(vertices, faces, **prm):
     """
     if not go:
         return None
-    mesh = surf(vertices, faces, **prm)
-    fig = go.Figure(data=mesh)
+    data = [surf(vertices, faces, **prm)]
+    if wireframe:
+        if wireframe is not True:
+            color = wireframe 
+        else:
+            color = 'black'
+        data += [_wireframe(vertices, faces, color=color)]
+    fig = go.Figure(data=data)
     fig.show()
     return fig
