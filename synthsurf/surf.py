@@ -682,7 +682,7 @@ def stiffness(vertices, faces):
     ----------
     vertices : (N, 3) tensor
         Mesh vertices
-    faces : (N, K) tensor
+    faces : (M, K) tensor
         Mesh faces
 
     Returns
@@ -749,7 +749,7 @@ def face_cotangents(vertices, faces):
     ----------
     vertices : (N, 3) tensor
         Mesh vertices
-    faces : (N, K) tensor
+    faces : (M, K) tensor
         Mesh faces
 
     Returns
@@ -790,7 +790,7 @@ def stiffness_matvec(cot, faces, vector):
     ----------
     cot : (M, D) tensor
         Cotangents in each face
-    faces : (N, K) tensor
+    faces : (M, K) tensor
         Mesh faces
     vector : (N, 3) tensor
         Vector of vertices
@@ -835,7 +835,7 @@ def mass(vertices, faces, lump=False):
     ----------
     vertices : (N, 3) tensor
         Mesh vertices
-    faces : (N, K) tensor
+    faces : (M, K) tensor
         Mesh faces
     lump : bool
         Return the majoriser diag(|B|1) instead of B
@@ -881,7 +881,7 @@ def mass_matvec(area, faces, vector, lump=False):
     ----------
     area : (M, D) tensor
         Area of each face
-    faces : (N, K) tensor
+    faces : (M, K) tensor
         Mesh faces
     vector : (N, 3) tensor
         Vector of vertices
