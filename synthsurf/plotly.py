@@ -317,9 +317,14 @@ def intensity_to_color(intensity, colorscale, cmin, cmax):
         colorscale = colors.get_colorscale(colorscale)
 
     colorscale = [
-        [ctrl, [x/255 for x in color_str2list(rgb)]]
+        [ctrl, color_str2list(rgb)]
         for ctrl, rgb in colorscale
     ]
+    colorscale = [
+        [ctrl, [x/255 for x in rgb[:3]] + rgb[3:]]
+        for ctrl, rgb in colorscale
+    ]
+
     color = torch.ones([len(intensity), 4])
     rgb = colorscale[0][1]
     color[:, :len(rgb)] = torch.as_tensor(rgb).to(color)
