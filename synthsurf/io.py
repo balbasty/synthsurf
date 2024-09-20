@@ -11,7 +11,6 @@ _np_to_torch_dtype = {
     np.float64: torch.float64,
     np.complex64: torch.complex32,
     np.complex128: torch.complex64,
-    np.complex256: torch.complex128,
     np.bool_: torch.bool,
     np.uint8: torch.uint8,
     np.int8: torch.int8,
@@ -21,7 +20,7 @@ _np_to_torch_dtype = {
     # upcast
     np.uint16: torch.int32,
     np.uint32: torch.int64,
-    np.uint64: torch.int64, # risk overflow
+    np.uint64: torch.int64,     # risk overflow
 }
 
 _torch_to_np_dtype = {
@@ -30,7 +29,6 @@ _torch_to_np_dtype = {
     torch.float64: np.float64,
     torch.complex32: np.complex64,
     torch.complex64: np.complex128,
-    torch.complex128: np.complex256,
     torch.bool: np.bool_,
     torch.uint8: np.uint8,
     torch.int8: np.int8,
@@ -38,6 +36,11 @@ _torch_to_np_dtype = {
     torch.int32: np.int32,
     torch.int64: np.int64,
 }
+
+
+if hasattr(np, 'complex256') and hasattr(torch, 'complex128'):
+    _np_to_torch_dtype[np.complex256] = torch.complex128
+    _torch_to_np_dtype[torch.complex128] = np.complex256
 
 
 def to_np_dtype(dtype):
@@ -52,7 +55,6 @@ def to_torch_dtype(dtype):
         return dtype
     dtype = _np_to_torch_dtype[to_np_dtype(dtype)]
     return dtype
-
 
 
 def default_affine(shape, voxel_size=1, **backend):
@@ -118,7 +120,7 @@ def load_label_volume(fname, return_space=False, numpy=False, dtype=None, device
     f = nib.load(fname)
     affine = f.affine
     d = np.asarray(f.dataobj)
-  
+
     if not numpy:
         if not np.dtype(d.dtype).isnative:
             d = d.newbyteorder().byteswap(inplace=True)
@@ -127,7 +129,6 @@ def load_label_volume(fname, return_space=False, numpy=False, dtype=None, device
         affine = torch.as_tensor(affine)
     else:
         d = d.astype(to_np_dtype(dtype))
-
 
     return (d, affine) if return_space else d
 
@@ -164,18 +165,17 @@ def load_volume(fname, return_space=False, numpy=False, dtype='float32', device=
     f = nib.load(fname)
     affine = f.affine
     d = f.get_fdata(dtype=dtype)
-  
+
     if not numpy:
         if not np.dtype(d.dtype).isnative:
             d = d.newbyteorder().byteswap(inplace=True)
-        d = torch.as_tensor(d, dtype=to_torch_dtype(dtype or d.dtype), 
+        d = torch.as_tensor(d, dtype=to_torch_dtype(dtype or d.dtype),
                             device=device)
         affine = torch.as_tensor(affine)
     else:
         d = d.astype(to_np_dtype(dtype))
 
     return (d, affine) if return_space else d
-
 
 
 def _closest_orientation(lin):
@@ -327,5 +327,5 @@ def load_annot(fname, numpy=False):
         if not np.dtype(c.dtype).isnative:
             c = c.newbyteorder().byteswap(inplace=True)
         c = torch.as_tensor(c, dtype=_np_to_torch_dtype[np.dtype(c.dtype).type])
-    
+
     return l, c, n

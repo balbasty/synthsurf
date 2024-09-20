@@ -674,7 +674,7 @@ def adjacency(n, faces, dtype=None):
 
 
 def stiffness(vertices, faces):
-    """Compute the (sparse) stiffness matrix 
+    """Compute the (sparse) stiffness matrix
 
     This function is only implemented for 3D meshes.
 
@@ -707,7 +707,7 @@ def stiffness(vertices, faces):
     #                                 /   \
     #                                B --- C
     #   For the weight assigned to edge B-C, I compute cot(<AB, AC>).
-    #   Note that Martin Martin computes cot(<CA, AB>), but this 
+    #   Note that Martin Martin computes cot(<CA, AB>), but this
     #   is equal to -cot(<AB, CA>) = cot(<AB, AC>). So everyting's fine.
 
     # compute triangles area (x 4)
@@ -727,7 +727,7 @@ def stiffness(vertices, faces):
     # angle at vertex 2
     alpha2 = -dot(triangles[:, 0] - triangles[:, 2], triangles[:, 1] - triangles[:, 2]) / area4
     a += torch.sparse_coo_tensor(faces[:, :2].T, alpha2, [n, n])
-    
+
     # make symmetric
     a += a.transpose(-1, -2)
 
@@ -779,7 +779,7 @@ def face_cotangents(vertices, faces):
 
     # angle at vertex 2
     alpha2 = -dot(triangles[:, 0] - triangles[:, 2], triangles[:, 1] - triangles[:, 2]) / area4
-    
+
     return torch.stack([alpha0, alpha1, alpha2], dim=-1)
 
 
@@ -827,7 +827,7 @@ def stiffness_matvec(cot, faces, vector):
 
 
 def mass(vertices, faces, lump=False):
-    """Compute the (sparse) mass matrix 
+    """Compute the (sparse) mass matrix
 
     This function is only implemented for 3D meshes.
 
@@ -866,7 +866,7 @@ def mass(vertices, faces, lump=False):
         a += torch.sparse_coo_tensor(faces[:, 1:].T, area, [n, n])
         a += torch.sparse_coo_tensor(faces[:, [0, 2]].T, area, [n, n])
         a += torch.sparse_coo_tensor(faces[:, :2].T, area, [n, n])
-        
+
         # make symmetric
         a += a.transpose(-1, -2)
 
