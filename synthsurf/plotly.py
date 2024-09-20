@@ -131,6 +131,20 @@ def show_surf(vertices, faces, wireframe=False, **prm):
     return fig, data
 
 
+def scalebar(colorscale, **prm):
+    return go.Scatter3d(
+        x=[0], y=[0], z=[0], mode='markers',
+        marker=dict(
+            size=0,
+            color=[0],
+            colorscale=colorscale,
+            showscale=True,
+            colorbar_thickness=23,
+            **prm
+        )
+    )
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
