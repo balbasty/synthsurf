@@ -201,10 +201,14 @@ def interpolate_colorscale(colorscale, i):
     Interpolate a color scale at a given control point
     """
     j = -1
-    while j < len(colorscale):
+    ok = False
+    while j < len(colorscale) - 1:
         j += 1
         if colorscale[j][0] >= i:
+            ok = True
             break
+    if not ok:
+        return colorscale[-1][1]
     if colorscale[j][0] == i:
         if j < len(colorscale)-1:
             if colorscale[j+1][0] == i:
@@ -313,7 +317,7 @@ def intensity_to_color(intensity, colorscale, cmin, cmax):
         colorscale = colors.get_colorscale(colorscale)
 
     colorscale = [
-        [ctrl, color_str2list(rgb)]
+        [ctrl, [x/255 for x in color_str2list(rgb)]]
         for ctrl, rgb in colorscale
     ]
     color = torch.ones([len(intensity), 4])
@@ -349,8 +353,7 @@ def intensity_to_color(intensity, colorscale, cmin, cmax):
         color[mask1, :rgb.shape[-1]] = rgb.to(color)
         mask |= mask1
 
-    color[:, -1] *= 255
-
+    color.clamp_(0, 1)
     return color
 
 
@@ -366,15 +369,15 @@ def merge_colors(*colors):
     -------
     color : (*batch, 4) tensor
     """
-    color = torch.ones_like(colors[0]).mul_(255)
+    color = torch.ones_like(colors[0])
     for color1 in colors:
         # Prepare alpha
-        alpha = color1[..., -1:] / 255
+        alpha = color1[..., -1:]
         # Merge
         color[:, :3] = (
             color[:, :3] * (1 - alpha) +
             color1[:, :3] * alpha
         )
         color[:, -1:] += color1[:, -1:]
-    color.clamp_max_(255)
+    color.clamp_(0, 1)
     return color
