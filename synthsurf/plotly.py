@@ -29,9 +29,9 @@ def wireframe(vertices, faces, color='black', width=1, **prm):
     Ye = []
     Ze = []
     for T in tri_points:
-        Xe.extend([T[k%3, 0] for k in range(4)]+[None])
-        Ye.extend([T[k%3, 1] for k in range(4)]+[None])
-        Ze.extend([T[k%3, 2] for k in range(4)]+[None])
+        Xe.extend([T[k % 3, 0] for k in range(4)]+[None])
+        Ye.extend([T[k % 3, 1] for k in range(4)]+[None])
+        Ze.extend([T[k % 3, 2] for k in range(4)]+[None])
 
     if isinstance(color, (list, tuple)):
         color = 'rgb({color[0]}, {color[1]}, {color[2]})'
@@ -174,7 +174,7 @@ def color_str2list(color: str):
         return mycolor
     elif color.startswith('rgb'):
         color = color.split('(')[1].split(')')[0].split(',')
-        color = list(map(float, color))
+        color = list(map(float, map(str.strip, color)))
         return color
     else:
         return color
@@ -260,7 +260,8 @@ def make_transparent_colorscale(base: str, cmin, cmax, alpha=[]):
     cmap
         New colormap
     """
-    base = colors.get_colorscale(base)
+    if isinstance(base, str):
+        base = colors.get_colorscale(base)
 
     # Convert rgb string to list[int]
     base = [[i, color_str2list(rgb)] for i, rgb in base]
