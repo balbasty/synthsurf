@@ -123,7 +123,7 @@ def load_label_volume(fname, return_space=False, numpy=False, dtype=None, device
 
     if not numpy:
         if not np.dtype(d.dtype).isnative:
-            d = d.newbyteorder().byteswap(inplace=True)
+            d = d.view(d.dtype.newbyteorder('=')).byteswap(inplace=True)
         d = torch.as_tensor(d, dtype=to_torch_dtype(dtype or d.dtype),
                             device=device)
         affine = torch.as_tensor(affine)
@@ -168,7 +168,7 @@ def load_volume(fname, return_space=False, numpy=False, dtype='float32', device=
 
     if not numpy:
         if not np.dtype(d.dtype).isnative:
-            d = d.newbyteorder().byteswap(inplace=True)
+            d = d.view(d.dtype.newbyteorder('=')).byteswap(inplace=True)
         d = torch.as_tensor(d, dtype=to_torch_dtype(dtype or d.dtype),
                             device=device)
         affine = torch.as_tensor(affine)
@@ -233,9 +233,9 @@ def load_mesh(fname, return_space=False, numpy=False):
 
     if not numpy:
         if not np.dtype(v.dtype).isnative:
-            v = v.newbyteorder().byteswap(inplace=True)
+            v = v.view(v.dtype.newbyteorder('=')).byteswap(inplace=True)
         if not np.dtype(f.dtype).isnative:
-            f = f.newbyteorder().byteswap(inplace=True)
+            f = v.view(f.dtype.newbyteorder('=')).byteswap(inplace=True)
         v = torch.as_tensor(v, dtype=_np_to_torch_dtype[np.dtype(v.dtype).type])
         f = torch.as_tensor(f, dtype=_np_to_torch_dtype[np.dtype(f.dtype).type])
 
@@ -290,7 +290,7 @@ def load_overlay(fname, numpy=False):
     o = fsio.read_morph_data(fname)
     if not numpy:
         if not np.dtype(o.dtype).isnative:
-            o = o.newbyteorder().byteswap(inplace=True)
+            o = o.view(o.dtype.newbyteorder('=')).byteswap(inplace=True)
         o = torch.as_tensor(o, dtype=_np_to_torch_dtype[np.dtype(o.dtype).type])
     return o
 
@@ -317,15 +317,15 @@ def load_annot(fname, numpy=False):
         The names of the labels.
 
     """
-    l, c, n = fsio.read_annot(fname)
+    a, c, n = fsio.read_annot(fname)
     n = [n1.decode('utf8') for n1 in n]
 
     if not numpy:
-        if not np.dtype(l.dtype).isnative:
-            l = l.newbyteorder().byteswap(inplace=True)
-        l = torch.as_tensor(l, dtype=_np_to_torch_dtype[np.dtype(l.dtype).type])
+        if not np.dtype(a.dtype).isnative:
+            a = a.view(a.dtype.newbyteorder('=')).byteswap(inplace=True)
+        a = torch.as_tensor(a, dtype=_np_to_torch_dtype[np.dtype(a.dtype).type])
         if not np.dtype(c.dtype).isnative:
-            c = c.newbyteorder().byteswap(inplace=True)
+            c = c.view(c.dtype.newbyteorder('=')).byteswap(inplace=True)
         c = torch.as_tensor(c, dtype=_np_to_torch_dtype[np.dtype(c.dtype).type])
 
-    return l, c, n
+    return a, c, n
