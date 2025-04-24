@@ -235,7 +235,7 @@ def load_mesh(fname, return_space=False, numpy=False):
         if not np.dtype(v.dtype).isnative:
             v = v.view(v.dtype.newbyteorder('=')).byteswap(inplace=True)
         if not np.dtype(f.dtype).isnative:
-            f = v.view(f.dtype.newbyteorder('=')).byteswap(inplace=True)
+            f = f.view(f.dtype.newbyteorder('=')).byteswap(inplace=True)
         v = torch.as_tensor(v, dtype=_np_to_torch_dtype[np.dtype(v.dtype).type])
         f = torch.as_tensor(f, dtype=_np_to_torch_dtype[np.dtype(f.dtype).type])
 
